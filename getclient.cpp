@@ -1,0 +1,179 @@
+
+#include "socket.h"
+#include "threadpool.h"
+#include "kvhelper.h"
+#include "kvconfig.h"
+#include <string.h>
+#include <iostream>
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
+#include <vector>
+#include <fstream>
+#include <math.h>
+#include <errno.h>
+#include <pthread.h>
+
+using namespace mmtraining;
+using namespace std;
+
+string* key = new string[NTESTDATA];
+pthread_mutex_t mutex;
+int num = 0;
+
+void get_sprintf(char *buf) {
+    sprintf(buf, "get %s", key[rand() % NTESTDATA].c_str());
+}
+
+class TestThread : public Thread {
+public:
+    TestThread(unsigned short port, void (*func)(char *buf)) {
+	this->port = port;
+	this->func = func;
+	isFinish = false;
+    }
+
+    int Run() {
+	int count = 0;
+	ClientSocket socket;
+	char *buf = new char[KVDATABUFSIZE];
+
+	if (socket.Connect(SERVERIP, port) != 0) goto end;
+	sleep(1);
+	
+	while (1) {
+	    func(buf);
+
+	    if (socket.WriteLine(buf, strlen(buf)) < 0) {
+		goto end;
+	    } 
+	    memset(buf, 0, sizeof(buf));
+	    if (socket.ReadLine(buf, sizeof(buf)) < 0) {
+		goto end;
+	    }
+
+	    if (strlen(buf) == 0) continue;
+	    ++ count;
+	    if (count == PERITERTIME) {
+		count = 0;
+		GetMutex(&mutex);
+		num += PERITERTIME;
+		ReleaseMutex(&mutex);
+	    }
+	}
+
+    end:
+	socket.Close();
+	isFinish = true;
+	delete []buf;
+
+	GetMutex(&mutex);
+	num += count;
+	ReleaseMutex(&mutex);
+
+	return 0;
+    }
+
+    bool isFinish;
+
+private:
+    void (*func)(char *buf);
+    unsigned short port;
+};
+
+vector<TestThread*> create_threads(unsigned short port, int threadCount,
+				      void (*func)(char *)) {
+    vector<TestThread*> threads;
+    threads.clear();
+
+    for (int i = 0; i < threadCount; ++ i) 
+	threads.push_back(new TestThread(port, func));
+				      
+
+    for (int i = 0; i < threadCount; ++ i) {
+	threads[i]->Start();
+	usleep(1);
+    }
+    
+    return threads;
+}
+
+void update_threads(unsigned short port, int threadCount, void (*func)(char *),
+		   vector<TestThread*> &threads) {
+    vector<TestThread*>::iterator it = threads.end();
+    while (it != threads.begin()) {
+	it --;
+	TestThread* thread = *it;
+	if (thread->isFinish) {
+	    thread->Join();
+	    delete thread;
+	    it = threads.erase(it);
+	}
+    }
+
+    for (int i = 0; i < threadCount - threads.size(); ++ i) {
+	TestThread* thread = new TestThread(port, func);
+	if (thread->Start() != 0) delete thread;
+	else threads.push_back(thread);
+    }
+}
+
+
+void test(unsigned short port, int getCount) {
+    vector<TestThread *> getThreads = create_threads(port, getCount, get_sprintf);
+
+    int tempNum = 0;
+    int time = -1;
+    while (time < TESTTIME) {
+	update_threads(port, getCount, get_sprintf, getThreads);
+	GetMutex(&mutex);
+	tempNum = num;
+	ReleaseMutex(&mutex);
+
+	sleep(1);
+
+	time += 1;
+	GetMutex(&mutex);
+	cout << "Time: " << time << " Count:" << num << " Speed:" << 
+	    num - tempNum << endl;
+	ReleaseMutex(&mutex);
+    }
+    
+    GetMutex(&mutex);
+    cout << "Time: 60s Count:" << num << " Speed:" << (float)num / time << endl;
+    ReleaseMutex(&mutex);
+}
+
+void load_data() {
+    cout << "start loading data" << endl;
+
+    ifstream fin;
+    fin.open(TESTFILENAME);
+    for (int i = 0; i < NTESTDATA; ++ i) {
+	fin >> key[i];
+	if (i % 100000 == 0) cout << i << endl;
+    }
+    fin.close();
+
+    cout << "loading data end" << endl;
+}
+
+
+int main(int argc, char **argv) {
+    if (argc < 3) {
+	cout << "usage: " << argv[0] << " port getCount" << endl;
+	return 1;
+    }
+
+    unsigned short port = atoi(argv[1]);
+    int getCount = atoi(argv[2]);
+ 
+    srand((unsigned)time(NULL));
+
+    load_data();
+    test(port, getCount);
+
+    return 0;
+}
