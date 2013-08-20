@@ -1,8 +1,8 @@
 
-#include "kvstore.h"
-#include "kvindex.h"
-#include "kvcache.h"
-#include "kvstat.h"
+#include "../kvstore.h"
+#include "../kvindex.h"
+#include "../kvcache.h"
+#include "../kvstat.h"
 #include <iostream>
 #include <string>
 #include <unistd.h>

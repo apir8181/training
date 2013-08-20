@@ -7,10 +7,10 @@
 #include <string>
 #include <string.h>
 #include <assert.h>
-#include "kvconfig.h"
-#include "kvindex.h"
-#include "kvfile.h"
-#include "kvhelper.h"
+#include "../kvconfig.h"
+#include "../kvindex.h"
+#include "../kvfile.h"
+#include "../kvhelper.h"
 
 using namespace mmtraining;
 using namespace std;

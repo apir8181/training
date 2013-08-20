@@ -1,6 +1,6 @@
 
-#include "kvfile.h"
-#include "kvconfig.h"
+#include "../kvfile.h"
+#include "../kvconfig.h"
 #include <iostream>
 #include <string>
 #include <assert.h>
